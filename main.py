@@ -1,9 +1,18 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-# Inicializamos el motor del servidor
 app = FastAPI(title="Buscador de Componentes FIMEE")
 
-# Ruta principal para comprobar que el servidor despertó correctamente
+# --- ESTO ES EL PERMISO (CORS) ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # Esto permite que cualquier página lea tus datos
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+# ---------------------------------
+
 @app.get("/")
 def verificar_estado():
     return {
@@ -11,11 +20,9 @@ def verificar_estado():
         "estado": "Activo"
     }
 
-# Estructura base donde conectaremos la inteligencia artificial luego
 @app.get("/buscar/{palabra_clave}")
 def procesar_busqueda(palabra_clave: str):
-    # Por ahora solo nos devuelve la palabra que escriba el cliente
     return {
         "cliente_busca": palabra_clave, 
-        "respuesta": "Pronto conectaremos esto con los paquetes del inventario."
+        "respuesta": f"Buscando en el inventario el mejor paquete para: {palabra_clave}"
     }
