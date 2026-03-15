@@ -43,10 +43,6 @@ def sanear_numero(valor):
 
 # --- RUTAS DE LA API ---
 
-@app.get("/")
-def inicio():
-    return {"mensaje": "Servidor Conecta FIMEE Operativo y Seguro", "estado": "Online"}
-
 @app.get("/buscar/{termino}")
 def buscar_en_inventario(termino: str):
     try:
@@ -55,33 +51,41 @@ def buscar_en_inventario(termino: str):
         termino_limpio = normalizar_texto(termino)
         
         for fila in datos:
-            # Filtro 3: Ignorar filas vacías o corruptas (si no hay SKU o Nombre, salta a la siguiente)
+            # 1. Filtro de Integridad: Si no hay SKU o Nombre, saltar
             if not fila.get('SKU') or not fila.get('Nombre'):
                 continue
+                
+            # 2. Filtro de Visibilidad: Si dice "No", "Falso" o está vacío, saltar
+            visible = str(fila.get('Visible_Web', '')).strip().lower()
+            if visible in ['no', 'falso', 'false', '0', '']:
+                continue 
             
-            # Normalizamos los campos donde vamos a buscar
+            # Normalizamos los campos de búsqueda
             nombre = normalizar_texto(fila.get('Nombre', ''))
             categoria = normalizar_texto(fila.get('Categoria', ''))
             tags = normalizar_texto(fila.get('Palabras_Clave', ''))
             
-            # Buscamos coincidencias exactas y a prueba de tildes
             if termino_limpio in nombre or termino_limpio in categoria or termino_limpio in tags:
                 
-                # Empaquetamos los datos aplicando los filtros de saneamiento
+                # Empaquetamos SOLO los datos públicos y seguros
                 resultados.append({
                     "sku": str(fila.get('SKU', '')).strip(),
                     "nombre": str(fila.get('Nombre', '')).strip(),
                     "precio": sanear_numero(fila.get('Precio', 0)),
+                    "precio_oferta": sanear_numero(fila.get('Precio_Oferta', 0)),
+                    "descuento": sanear_numero(fila.get('Descuento_%', 0)),
                     "stock": sanear_numero(fila.get('Stock', 0)),
+                    "categoria": str(fila.get('Categoria', '')).strip(),
                     "descripcion": str(fila.get('Descripcion', '')).strip(),
                     "imagen": str(fila.get('Imagen_URL', '')).strip(),
-                    "categoria": str(fila.get('Categoria', '')).strip(),
+                    "datasheet": str(fila.get('Enlace_Datasheet', '')).strip(),
                     "opciones_potencia": str(fila.get('Opciones_Potencia', '')).strip(),
                     "opciones_valor": str(fila.get('Opciones_Valor', '')).strip()
+                    # Nota de Seguridad: Costo_Compra, Ubicacion_Fisica y Proveedor 
+                    # NUNCA se agregan aquí para proteger el negocio.
                 })
                 
         return {"total": len(resultados), "productos": resultados}
         
     except Exception as e:
-        # Filtro 4: Si Google Sheets se cae, la API no explota, solo devuelve un mensaje de error ordenado
-        return {"error_critico": "Falla de conexión o saturación de base de datos", "detalle": str(e)}
+        return {"error_critico": "Falla de conexión", "detalle": str(e)}
