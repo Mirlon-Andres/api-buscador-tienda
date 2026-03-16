@@ -24,35 +24,48 @@ app.add_middleware(
 # --- ESCUDOS DE PROTECCIÓN Y SANEAMIENTO DE DATOS ---
 
 def normalizar_texto(texto):
-    """Filtro 1: Elimina mayúsculas, espacios extra y tildes. 
-    Así 'Árduíno ' se vuelve 'arduino' y las búsquedas nunca fallan."""
+    """Filtro 1: Elimina mayúsculas, espacios extra y tildes."""
     if not texto: return ""
     texto = str(texto).lower().strip()
     return ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
 def sanear_numero(valor):
-    """Filtro 2: Convierte textos humanos en variables matemáticas puras.
-    Si en Excel escriben ' S/ 15,50 ', lo limpia y lo convierte a 15.50"""
+    """Filtro 2: Convierte textos humanos en variables matemáticas puras."""
     if isinstance(valor, (int, float)): return float(valor)
     if not valor: return 0.0
     try:
         limpio = str(valor).replace('S/', '').replace('s/', '').replace(' ', '').replace(',', '.')
         return float(limpio)
     except ValueError:
-        return 0.0 # Si escriben pura letra por error, devuelve 0 para no colapsar
+        return 0.0 
 
 # --- RUTAS DE LA API ---
+
+@app.get("/")
+def inicio():
+    return {"mensaje": "Servidor Conecta FIMEE Operativo y Seguro", "estado": "Online"}
 
 @app.get("/buscar/{termino}")
 def buscar_en_inventario(termino: str):
     try:
         datos = hoja.get_all_records()
         resultados = []
+        
+        # --- MEJORA 1: TOKENIZACIÓN ---
+        # Cortamos lo que el usuario escribe en palabras sueltas
+        # Ej: "fisica serway" se convierte en ["fisica", "serway"]
         termino_limpio = normalizar_texto(termino)
+        palabras_busqueda = termino_limpio.split() 
+        
+        # Si la búsqueda está vacía, no hacemos nada
+        if not palabras_busqueda:
+            return {"total": 0, "productos": []}
         
         for fila in datos:
+            sku = str(fila.get('SKU', '')).strip().upper()
+            
             # 1. Filtro de Integridad: Si no hay SKU o Nombre, saltar
-            if not fila.get('SKU') or not fila.get('Nombre'):
+            if not sku or not fila.get('Nombre'):
                 continue
                 
             # 2. Filtro de Visibilidad: Si dice "No", "Falso" o está vacío, saltar
@@ -60,16 +73,31 @@ def buscar_en_inventario(termino: str):
             if visible in ['no', 'falso', 'false', '0', '']:
                 continue 
             
-            # Normalizamos los campos de búsqueda
+            # 3. Normalizamos TODAS las columnas de texto
             nombre = normalizar_texto(fila.get('Nombre', ''))
             categoria = normalizar_texto(fila.get('Categoria', ''))
             tags = normalizar_texto(fila.get('Palabras_Clave', ''))
+            descripcion = normalizar_texto(fila.get('Descripcion', ''))
             
-            if termino_limpio in nombre or termino_limpio in categoria or termino_limpio in tags:
-                
+            # --- MEJORA 2: LA MEGACADENA ---
+            # Unimos toda la información en un solo bloque gigante de texto.
+            # Si es un libro (LIB-), la descripción es fundamental para encontrar al autor o el tema.
+            if sku.startswith("LIB-"):
+                texto_busqueda = f"{nombre} {categoria} {tags} {descripcion}"
+            else:
+                # Para componentes también lo unimos, así si buscan "sensor ultrasonido" 
+                # y "ultrasonido" está en la descripción, igual lo encuentra.
+                texto_busqueda = f"{nombre} {categoria} {tags} {descripcion}"
+            
+            # --- MEJORA 3: MATCH INTELIGENTE ---
+            # Verifica que TODAS las palabras que el usuario escribió existan en la megacadena, 
+            # sin importar el orden en el que las haya escrito.
+            coincidencia = all(palabra in texto_busqueda for palabra in palabras_busqueda)
+            
+            if coincidencia:
                 # Empaquetamos SOLO los datos públicos y seguros
                 resultados.append({
-                    "sku": str(fila.get('SKU', '')).strip(),
+                    "sku": sku,
                     "nombre": str(fila.get('Nombre', '')).strip(),
                     "precio": sanear_numero(fila.get('Precio', 0)),
                     "precio_oferta": sanear_numero(fila.get('Precio_Oferta', 0)),
@@ -81,8 +109,6 @@ def buscar_en_inventario(termino: str):
                     "datasheet": str(fila.get('Enlace_Datasheet', '')).strip(),
                     "opciones_potencia": str(fila.get('Opciones_Potencia', '')).strip(),
                     "opciones_valor": str(fila.get('Opciones_Valor', '')).strip()
-                    # Nota de Seguridad: Costo_Compra, Ubicacion_Fisica y Proveedor 
-                    # NUNCA se agregan aquí para proteger el negocio.
                 })
                 
         return {"total": len(resultados), "productos": resultados}
