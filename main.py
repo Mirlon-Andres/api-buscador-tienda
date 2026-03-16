@@ -24,9 +24,12 @@ app.add_middleware(
 # --- ESCUDOS DE PROTECCIÓN Y SANEAMIENTO DE DATOS ---
 
 def normalizar_texto(texto):
-    """Filtro 1: Elimina mayúsculas, espacios extra y tildes."""
+    """Filtro 1: Elimina mayúsculas, tildes, y convierte guiones en espacios."""
     if not texto: return ""
-    texto = str(texto).lower().strip()
+    
+    # NUEVO: Convertimos guiones bajos y normales en espacios
+    texto = str(texto).replace('_', ' ').replace('-', ' ').lower().strip()
+    
     return ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
 def sanear_numero(valor):
